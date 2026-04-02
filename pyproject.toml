@@ -1,24 +1,32 @@
 [tool.black]
 line-length = 88
 target-version = ["py311"]
-#exclude = '''
-#/path/to/dir/.*
-#'''
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "team_shared_lib"
+name = "iot-auth"
 version = "0.1.0"
-description = "Shared Python utilities for the team"
-readme = "README.md"
+description = "Shared JWT authentication library for Django and FastAPI microservices"
+readme = "readme.md"
 requires-python = ">=3.10"
 authors = [
   { name = "Iot Team Alpha" }
 ]
-dependencies = []
+dependencies = [
+    "PyJWT>=2.0",
+]
+
+[project.optional-dependencies]
+django = ["django>=4.0"]
+fastapi = ["fastapi>=0.100", "starlette>=0.27"]
+dev = [
+    "pytest>=7.0",
+    "pytest-django>=4.0",
+    "pytest-asyncio>=0.21",
+]
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -27,4 +35,9 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-shared_lib = ["py.typed"]
+iot_auth = ["py.typed"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "tests.settings"
+pythonpath = ["src", "."]
+asyncio_mode = "auto"
