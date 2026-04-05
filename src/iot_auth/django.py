@@ -152,15 +152,37 @@ class CheckPermissionsMixin:
     """
     Mixin for class-based views to check permissions.
 
-    Usage:
+    Usage with same permissions for all methods:
         class MyView(CheckPermissionsMixin, View):
-            required_permissions = ['notification.view']
+            required_permissions = ['notifications.view']
 
-            def get(self, request: AuthenticatedRequest) -> JsonResponse:
+            def get(self, request) -> JsonResponse:
+                ...
+
+    Usage with per-method permissions:
+        class MyView(CheckPermissionsMixin, View):
+            permission_map = {
+                'get': ['notifications.view'],
+                'post': ['notifications.add'],
+                'delete': ['notifications.delete'],
+            }
+
+            def get(self, request) -> JsonResponse:
+                ...
+
+            def post(self, request) -> JsonResponse:
                 ...
     """
 
     required_permissions: list[str] = []
+    permission_map: dict[str, list[str]] = {}
+
+    def get_permissions_for_method(self, method: str) -> list[str]:
+        """Get permissions for the given HTTP method."""
+        method_lower = method.lower()
+        if self.permission_map and method_lower in self.permission_map:
+            return self.permission_map[method_lower]
+        return self.required_permissions
 
     def dispatch(self, request: HttpRequest, *args, **kwargs):
         # Allow internal requests
@@ -171,8 +193,9 @@ class CheckPermissionsMixin:
         if not auth:
             return not_authorized_response()
 
-        if self.required_permissions:
-            if not has_permissions(auth, self.required_permissions):
+        permissions = self.get_permissions_for_method(request.method)
+        if permissions:
+            if not has_permissions(auth, permissions):
                 return not_authorized_response()
 
         return super().dispatch(request, *args, **kwargs)  # type: ignore

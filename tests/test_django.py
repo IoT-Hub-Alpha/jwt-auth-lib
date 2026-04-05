@@ -288,3 +288,231 @@ class TestRequireAuthDecorator:
         response = view(request)
 
         assert response.status_code == 200
+
+
+class TestCheckPermissionsMixin:
+    """Tests for CheckPermissionsMixin class-based view mixin."""
+
+    def test_required_permissions_allows_with_permission(self, rf):
+        """Test mixin allows request with required permission."""
+        from django.views import View
+
+        class TestView(CheckPermissionsMixin, View):
+            required_permissions = ["devices.view"]
+
+            def get(self, request):
+                return JsonResponse({"success": True})
+
+        request = rf.get("/")
+        request.auth = {
+            "sub": "user-123",
+            "permissions": ["devices.view"],
+            "is_superuser": False,
+        }
+        request._is_internal_request = False
+
+        view = TestView.as_view()
+        response = view(request)
+
+        assert response.status_code == 200
+
+    def test_required_permissions_rejects_without_permission(self, rf):
+        """Test mixin rejects request without required permission."""
+        from django.views import View
+
+        class TestView(CheckPermissionsMixin, View):
+            required_permissions = ["admin.delete"]
+
+            def get(self, request):
+                return JsonResponse({"success": True})
+
+        request = rf.get("/")
+        request.auth = {
+            "sub": "user-123",
+            "permissions": ["devices.view"],
+            "is_superuser": False,
+        }
+        request._is_internal_request = False
+
+        view = TestView.as_view()
+        response = view(request)
+
+        assert response.status_code == 401
+
+    def test_permission_map_different_methods(self, rf):
+        """Test permission_map applies different permissions per HTTP method."""
+        from django.views import View
+
+        class TestView(CheckPermissionsMixin, View):
+            permission_map = {
+                "get": ["devices.view"],
+                "post": ["devices.add"],
+                "delete": ["devices.delete"],
+            }
+
+            def get(self, request):
+                return JsonResponse({"action": "list"})
+
+            def post(self, request):
+                return JsonResponse({"action": "create"})
+
+            def delete(self, request):
+                return JsonResponse({"action": "delete"})
+
+        view = TestView.as_view()
+
+        # User with only devices.view permission
+        request = rf.get("/")
+        request.auth = {
+            "permissions": ["devices.view"],
+            "is_superuser": False,
+        }
+        request._is_internal_request = False
+        response = view(request)
+        assert response.status_code == 200  # GET allowed
+
+        request = rf.post("/")
+        request.auth = {
+            "permissions": ["devices.view"],
+            "is_superuser": False,
+        }
+        request._is_internal_request = False
+        response = view(request)
+        assert response.status_code == 401  # POST denied
+
+        # User with devices.add permission
+        request = rf.post("/")
+        request.auth = {
+            "permissions": ["devices.add"],
+            "is_superuser": False,
+        }
+        request._is_internal_request = False
+        response = view(request)
+        assert response.status_code == 200  # POST allowed
+
+    def test_permission_map_takes_precedence(self, rf):
+        """Test permission_map takes precedence over required_permissions."""
+        from django.views import View
+
+        class TestView(CheckPermissionsMixin, View):
+            required_permissions = ["fallback.permission"]
+            permission_map = {
+                "get": ["specific.view"],
+            }
+
+            def get(self, request):
+                return JsonResponse({"success": True})
+
+        request = rf.get("/")
+        request.auth = {
+            "permissions": ["specific.view"],
+            "is_superuser": False,
+        }
+        request._is_internal_request = False
+
+        view = TestView.as_view()
+        response = view(request)
+
+        # Should use permission_map, not required_permissions
+        assert response.status_code == 200
+
+    def test_permission_map_fallback_to_required(self, rf):
+        """Test methods not in permission_map fall back to required_permissions."""
+        from django.views import View
+
+        class TestView(CheckPermissionsMixin, View):
+            required_permissions = ["fallback.permission"]
+            permission_map = {
+                "get": ["specific.view"],
+            }
+
+            def get(self, request):
+                return JsonResponse({"success": True})
+
+            def post(self, request):
+                return JsonResponse({"success": True})
+
+        view = TestView.as_view()
+
+        # POST is not in permission_map, should use required_permissions
+        request = rf.post("/")
+        request.auth = {
+            "permissions": ["specific.view"],  # Has GET permission, not fallback
+            "is_superuser": False,
+        }
+        request._is_internal_request = False
+        response = view(request)
+        assert response.status_code == 401  # POST denied - needs fallback.permission
+
+        request = rf.post("/")
+        request.auth = {
+            "permissions": ["fallback.permission"],
+            "is_superuser": False,
+        }
+        request._is_internal_request = False
+        response = view(request)
+        assert response.status_code == 200  # POST allowed with fallback permission
+
+    def test_internal_request_bypasses_permission_map(self, rf):
+        """Test internal request bypasses permission_map checks."""
+        from django.views import View
+
+        class TestView(CheckPermissionsMixin, View):
+            permission_map = {
+                "delete": ["admin.delete"],
+            }
+
+            def delete(self, request):
+                return JsonResponse({"success": True})
+
+        request = rf.delete("/")
+        request._is_internal_request = True
+        # No auth needed for internal requests
+
+        view = TestView.as_view()
+        response = view(request)
+
+        assert response.status_code == 200
+
+    def test_superuser_bypasses_permission_map(self, rf):
+        """Test superuser bypasses all permission_map checks."""
+        from django.views import View
+
+        class TestView(CheckPermissionsMixin, View):
+            permission_map = {
+                "delete": ["admin.superspecial"],
+            }
+
+            def delete(self, request):
+                return JsonResponse({"success": True})
+
+        request = rf.delete("/")
+        request.auth = {
+            "permissions": [],  # No permissions
+            "is_superuser": True,
+        }
+        request._is_internal_request = False
+
+        view = TestView.as_view()
+        response = view(request)
+
+        assert response.status_code == 200
+
+    def test_no_auth_returns_401(self, rf):
+        """Test request without auth returns 401."""
+        from django.views import View
+
+        class TestView(CheckPermissionsMixin, View):
+            required_permissions = ["devices.view"]
+
+            def get(self, request):
+                return JsonResponse({"success": True})
+
+        request = rf.get("/")
+        request._is_internal_request = False
+        # No auth attribute
+
+        view = TestView.as_view()
+        response = view(request)
+
+        assert response.status_code == 401

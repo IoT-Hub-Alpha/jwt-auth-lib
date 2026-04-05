@@ -88,18 +88,62 @@ from django.views import View
 from django.http import JsonResponse
 from iot_auth.django import CheckPermissionsMixin
 
+# Same permissions for all methods
 class DeviceListView(CheckPermissionsMixin, View):
     required_permissions = ["devices.view"]
 
     def get(self, request) -> JsonResponse:
         user_id = request.auth["sub"]
         return JsonResponse({"devices": []})
+```
 
-class DeviceEditView(CheckPermissionsMixin, View):
-    required_permissions = ["devices.view", "devices.edit"]
+### 4. Per-Method Permissions (Class-Based Views)
+
+Use `permission_map` to apply different permissions for each HTTP method:
+
+```python
+class DeviceView(CheckPermissionsMixin, View):
+    permission_map = {
+        "get": ["devices.view"],
+        "post": ["devices.add"],
+        "put": ["devices.edit"],
+        "delete": ["devices.delete"],
+    }
+
+    def get(self, request) -> JsonResponse:
+        return JsonResponse({"devices": []})
 
     def post(self, request) -> JsonResponse:
-        return JsonResponse({"success": True})
+        return JsonResponse({"created": True})
+
+    def put(self, request) -> JsonResponse:
+        return JsonResponse({"updated": True})
+
+    def delete(self, request) -> JsonResponse:
+        return JsonResponse({"deleted": True})
+```
+
+**How it works:**
+- `permission_map` takes precedence over `required_permissions`
+- Methods not in `permission_map` fall back to `required_permissions`
+- Superusers and internal requests bypass all checks
+
+```python
+# Mixed usage: permission_map + fallback
+class DeviceView(CheckPermissionsMixin, View):
+    required_permissions = ["devices.view"]  # Fallback for methods not in map
+    permission_map = {
+        "post": ["devices.add"],
+        "delete": ["devices.delete"],
+    }
+
+    def get(self, request) -> JsonResponse:
+        # Uses required_permissions (devices.view)
+        return JsonResponse({"devices": []})
+
+    def post(self, request) -> JsonResponse:
+        # Uses permission_map (devices.add)
+        return JsonResponse({"created": True})
 ```
 
 ## FastAPI Usage
