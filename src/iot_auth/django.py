@@ -46,6 +46,10 @@ class JWTAuthMiddleware:
         self.get_response = get_response
 
     def __call__(self, request: HttpRequest):
+        # Skip if we trying to access Admin:
+        if "admin" in request.path:
+            return self.get_response(request)
+
         # Get headers as dict for is_internal_request
         headers = {
             key[5:].replace("_", "-"): value

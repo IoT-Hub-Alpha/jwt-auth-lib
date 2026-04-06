@@ -118,7 +118,8 @@ def require_permissions(*permissions: str) -> Callable:
 
         @app.get("/devices")
         async def edit_device(
-            auth: JWTPayload = Depends(require_permissions("devices.view", "devices.edit"))
+            auth: JWTPayload =
+            Depends(require_permissions("devices.view", "devices.edit"))
         ):
             ...
     """
